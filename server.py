@@ -1,9 +1,25 @@
 import os
 from fastmcp import FastMCP
+from mcp.server.transport_security import TransportSecuritySettings
 from tools.firebase_utils import verifier_plan
 from tools.repas import enregistrer_repas, historique_repas, bilan_calorique_jour
 
-mcp = FastMCP("Zero Excuse — Coach Nutrition")
+mcp = FastMCP(
+    "Zero Excuse — Coach Nutrition",
+    transport_security=TransportSecuritySettings(
+        enable_dns_rebinding_protection=True,
+        allowed_hosts=[
+            "zero-excuse-mcp.onrender.com",
+            "localhost:*",
+            "127.0.0.1:*",
+        ],
+        allowed_origins=[
+            "https://zero-excuse-mcp.onrender.com",
+            "http://localhost:*",
+            "http://127.0.0.1:*",
+        ],
+    ),
+)
 
 READ_ONLY = {
     "readOnlyHint": True,
