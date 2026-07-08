@@ -3,7 +3,7 @@ from fastmcp import FastMCP
 from tools.firebase_utils import verifier_plan
 from tools.repas import enregistrer_repas, historique_repas, bilan_calorique_jour
 
-mcp = FastMCP("Zero Excuse — Coach Nutrition", host="0.0.0.0")
+mcp = FastMCP("Zero Excuse — Coach Nutrition")
 
 READ_ONLY = {
     "readOnlyHint": True,
