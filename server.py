@@ -113,12 +113,6 @@ def bilan_du_jour(email: str) -> dict:
 
 
 # ── DÉMARRAGE ────────────────────────────────────────────────────
-# Remplace le bloc de démarrage à la fin par :
 if __name__ == "__main__":
-    import uvicorn
     port = int(os.environ.get("PORT", 10000))
-    uvicorn.run(
-        mcp.http_app(),
-        host="0.0.0.0",
-        port=port,
-    )
+    mcp.run(transport="http", host="0.0.0.0", port=port)
