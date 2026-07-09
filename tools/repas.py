@@ -62,10 +62,10 @@ def enregistrer_repas(
     }
 
     # Enregistrement dans users/{uid}/meals/{repas_id}
-    db.collection("users").doc(uid).collection("meals").doc(repas_id).set(repas_data)
+    db.collection("users").document(uid).collection("meals").document(repas_id).set(repas_data)
 
     # Mise à jour du compteur calorique du jour dans users/{uid}/daily_calories/{date}
-    daily_ref = db.collection("users").doc(uid).collection("daily_calories").document(date_key)
+    daily_ref = db.collection("users").document(uid).collection("daily_calories").document(date_key)
     daily_doc = daily_ref.get()
 
     if daily_doc.exists:
@@ -135,7 +135,7 @@ def historique_repas(email: str, jours: int = 7) -> dict:
         # Repas du jour
         repas_docs = (
             db.collection("users")
-            .doc(uid)
+            .document(uid)
             .collection("meals")
             .where("date", "==", date_key)
             .order_by("heure")
@@ -202,7 +202,7 @@ def bilan_calorique_jour(email: str) -> dict:
     # Repas du jour
     repas_docs = (
         db.collection("users")
-        .doc(uid)
+        .document(uid)
         .collection("meals")
         .where("date", "==", date_key)
         .order_by("heure")
