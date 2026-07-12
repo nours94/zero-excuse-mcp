@@ -2,6 +2,7 @@ import os
 from fastmcp import FastMCP
 from tools.firebase_utils import verifier_plan
 from tools.repas import enregistrer_repas, historique_repas, bilan_calorique_jour
+from tools.poids import poids_du_jour, historique_poids
 
 mcp = FastMCP("Zero Excuse — Coach Nutrition")
 
@@ -48,20 +49,10 @@ def sauvegarder_repas(
     notes: str = "",
 ) -> dict:
     """
-    Enregistre un repas dans Zero Excuse après analyse de la photo par ChatGPT.
+    Enregistre un repas analysé par ChatGPT dans Firebase Zero Excuse.
 
     À utiliser APRÈS que l'utilisateur a envoyé une photo de son repas
     et que ChatGPT a identifié les aliments et estimé les calories.
-
-    Paramètres :
-    - email : email du compte Zero Excuse
-    - aliments : liste des aliments identifiés (ex: ["riz", "poulet grillé", "salade"])
-    - calories : estimation totale en kcal
-    - proteines : protéines en grammes (optionnel)
-    - glucides : glucides en grammes (optionnel)
-    - lipides : lipides en grammes (optionnel)
-    - repas_type : "petit_dejeuner", "dejeuner", "diner", "collation" ou "repas"
-    - notes : observations particulières (optionnel)
 
     Exemples de déclenchement :
     - "Enregistre ce repas dans Zero Excuse"
@@ -92,7 +83,7 @@ def voir_historique_repas(email: str, jours: int = 7) -> dict:
     - "Quel était mon bilan alimentaire hier ?"
     - "Mes repas des 3 derniers jours"
     """
-    jours = max(1, min(jours, 30))  # Entre 1 et 30 jours
+    jours = max(1, min(jours, 30))
     return historique_repas(email=email, jours=jours)
 
 
@@ -110,6 +101,37 @@ def bilan_du_jour(email: str) -> dict:
     - "Est-ce que j'ai dépassé mon objectif aujourd'hui ?"
     """
     return bilan_calorique_jour(email=email)
+
+
+# ── OUTIL 5 : POIDS DU JOUR ───────────────────────────────────────
+@mcp.tool(annotations=READ_ONLY)
+def voir_poids_jour(email: str) -> dict:
+    """
+    Retourne le poids enregistré aujourd'hui par l'utilisateur
+    (saisi depuis l'app Flutter ou le site web Zero Excuse).
+
+    Exemples de déclenchement :
+    - "Quel est mon poids aujourd'hui ?"
+    - "Est-ce que je me suis pesé aujourd'hui ?"
+    - "Quel poids j'ai entré ce matin ?"
+    """
+    return poids_du_jour(email=email)
+
+
+# ── OUTIL 6 : HISTORIQUE POIDS ────────────────────────────────────
+@mcp.tool(annotations=READ_ONLY)
+def voir_historique_poids(email: str, jours: int = 7) -> dict:
+    """
+    Retourne l'historique des pesées des X derniers jours, avec
+    l'évolution du poids jour par jour et la variation totale sur
+    la période.
+
+    Exemples de déclenchement :
+    - "Comment évolue mon poids cette semaine ?"
+    - "Montre-moi ma courbe de poids"
+    - "Combien j'ai perdu ce mois-ci ?"
+    """
+    return historique_poids(email=email, jours=jours)
 
 
 # ── DÉMARRAGE ────────────────────────────────────────────────────
