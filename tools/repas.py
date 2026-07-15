@@ -242,26 +242,44 @@ def bilan_calorique_jour(email: str) -> dict:
 
     tdee_repos = bmr * 1.2
     kcal_min = 1500.0 if sexe == "Homme" else 1200.0
-    objectif_deficit = max(kcal_min, min(tdee_repos, tdee_repos - 500))
+    objectif_type = str(a.get("objectifType") or "perte")
+    if objectif_type == "prise":
+        objectif_calorique = tdee_repos + 300
+    else:
+        objectif_calorique = max(kcal_min, min(tdee_repos, tdee_repos - 500))
 
-    reste = objectif_deficit - total_cal
+    reste = objectif_calorique - total_cal
+
+    if objectif_type == "prise":
+        statut = (
+            "✅ Objectif surplus atteint" if reste <= 0
+            else f"⚠️ Encore {round(reste)} kcal à manger pour atteindre le surplus visé"
+        )
+        message = (
+            f"Bilan du {date_key} : {total_cal} kcal consommées sur {round(objectif_calorique)} kcal objectif (surplus). "
+            + ("Objectif atteint, continuez ainsi." if reste <= 0 else f"Il reste {round(reste)} kcal à manger aujourd'hui.")
+        )
+    else:
+        statut = (
+            "✅ Dans l'objectif" if reste >= 0
+            else f"⚠️ Dépassement de {abs(round(reste))} kcal"
+        )
+        message = (
+            f"Bilan du {date_key} : {total_cal} kcal consommées sur {round(objectif_calorique)} kcal objectif. "
+            f"{'Il reste ' + str(round(reste)) + ' kcal.' if reste > 0 else 'Objectif dépassé de ' + str(abs(round(reste))) + ' kcal.'}"
+        )
 
     return {
         "succes": True,
         "date": date_key,
+        "objectif_type": objectif_type,
         "repas_du_jour": repas_jour,
         "total_calories": total_cal,
         "total_proteines_g": round(total_prot, 1),
         "total_glucides_g": round(total_gluc, 1),
         "total_lipides_g": round(total_lip, 1),
-        "objectif_calorique": objectif_deficit,
-        "calories_restantes": reste,
-        "statut": (
-            "✅ Dans l'objectif" if reste >= 0
-            else f"⚠️ Dépassement de {abs(reste)} kcal"
-        ),
-        "message": (
-            f"Bilan du {date_key} : {total_cal} kcal consommées sur {objectif_deficit} kcal objectif. "
-            f"{'Il reste ' + str(reste) + ' kcal.' if reste > 0 else 'Objectif dépassé de ' + str(abs(reste)) + ' kcal.'}"
-        ),
+        "objectif_calorique": round(objectif_calorique),
+        "calories_restantes": round(reste),
+        "statut": statut,
+        "message": message,
     }

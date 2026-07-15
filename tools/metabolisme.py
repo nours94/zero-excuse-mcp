@@ -64,7 +64,8 @@ def calculer_metabolisme(email: str) -> dict:
     freq_sport = str(a.get("freqSport") or "Jamais")
     intensite = str(a.get("intensite") or "Moderee")
     duree_sport = int(a.get("dureeSport") or 0)
-    objectif = float(d.get("goalWeight") or d.get("diagnosticObjectif") or (poids - 5))
+    objectif_type = str(a.get("objectifType") or "perte")
+    objectif = float(d.get("goalWeight") or d.get("diagnosticObjectif") or (poids - 5 if objectif_type == "perte" else poids + 5))
 
     t = float(taille)
     t_m = t / 100
@@ -86,20 +87,30 @@ def calculer_metabolisme(email: str) -> dict:
     tdee_entrainement = tdee_repos + kcal_seance
 
     # ── 5. Apport calorique cible ──
+    is_prise = objectif_type == "prise"
     kcal_min = 1500.0 if sexe == "Homme" else 1200.0
-    apport_cible = _clamp(tdee_repos - 500, kcal_min, tdee_repos)
+    if is_prise:
+        apport_cible = tdee_repos + 300  # surplus modéré (lean bulk)
+    else:
+        apport_cible = _clamp(tdee_repos - 500, kcal_min, tdee_repos)
 
-    # ── 6. Déficits effectifs ──
-    deficit_repos = _clamp(tdee_repos - apport_cible, 0, 1000)
-    deficit_entrainement = _clamp(tdee_entrainement - apport_cible, 0, 1500)
+    # ── 6. Écarts effectifs ──
+    if is_prise:
+        deficit_repos = _clamp(apport_cible - tdee_repos, 0, 1000)
+        deficit_entrainement = _clamp(apport_cible - tdee_entrainement, -1500, 1000)
+    else:
+        deficit_repos = _clamp(tdee_repos - apport_cible, 0, 1000)
+        deficit_entrainement = _clamp(tdee_entrainement - apport_cible, 0, 1500)
 
     # ── 7. Perte journalière (1 kg graisse = 7700 kcal) ──
     perte_daily_repos = deficit_repos / 7700
     perte_daily_entrainement = deficit_entrainement / 7700
 
-    # ── 8. Perte hebdomadaire ──
+    # ── 8. Perte/gain hebdomadaire ──
     jours_repos = 7 - nb_jours
     perte_hebdo = (perte_daily_entrainement * nb_jours) + (perte_daily_repos * jours_repos)
+    if is_prise:
+        perte_hebdo = abs(perte_hebdo)
 
     # ── 9. Hydratation ──
     hydratation_base = poids * 0.033
@@ -136,6 +147,7 @@ def calculer_metabolisme(email: str) -> dict:
 
     return {
         "succes": True,
+        "objectif_type": objectif_type,
         "profil": {
             "sexe": sexe,
             "age": age,
@@ -153,9 +165,9 @@ def calculer_metabolisme(email: str) -> dict:
         "apport_cible_kcal": round(apport_cible),
         "deficit_repos_kcal": round(deficit_repos),
         "deficit_entrainement_kcal": round(deficit_entrainement),
-        "perte_estimee_g_jour_repos": round(perte_daily_repos * 1000),
-        "perte_estimee_g_jour_entrainement": round(perte_daily_entrainement * 1000),
-        "perte_estimee_kg_semaine": round(perte_hebdo, 2),
+        "variation_estimee_g_jour_repos": round(perte_daily_repos * 1000),
+        "variation_estimee_g_jour_entrainement": round(perte_daily_entrainement * 1000),
+        "variation_estimee_kg_semaine": round(perte_hebdo, 2),
         "projection_kg_mois": round(perte_hebdo * 4, 1),
         "hydratation_l_jour": round(hydratation_l, 1),
         "imc": round(imc, 1),
@@ -163,8 +175,8 @@ def calculer_metabolisme(email: str) -> dict:
         "morphotype_description": morpho_desc,
         "message": (
             f"Métabolisme de base : {round(bmr)} kcal/jour. "
-            f"Apport cible : {round(apport_cible)} kcal/jour. "
-            f"Perte estimée : {round(perte_hebdo, 2)} kg/semaine. "
+            f"Apport cible : {round(apport_cible)} kcal/jour ({'surplus' if is_prise else 'déficit'}). "
+            f"{'Gain' if is_prise else 'Perte'} estimé{'e' if not is_prise else ''} : {round(perte_hebdo, 2)} kg/semaine. "
             f"Morphotype : {morphotype}."
         ),
     }
