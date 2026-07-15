@@ -62,10 +62,10 @@ def enregistrer_repas(
     }
 
     # Enregistrement dans users/{uid}/meals/{repas_id}
-    db.collection("users").document(uid).collection("meals").document(repas_id).set(repas_data)
+    db.collection("users").doc(uid).collection("meals").doc(repas_id).set(repas_data)
 
     # Mise à jour du compteur calorique du jour dans users/{uid}/daily_calories/{date}
-    daily_ref = db.collection("users").document(uid).collection("daily_calories").document(date_key)
+    daily_ref = db.collection("users").doc(uid).collection("daily_calories").document(date_key)
     daily_doc = daily_ref.get()
 
     if daily_doc.exists:
@@ -135,7 +135,7 @@ def historique_repas(email: str, jours: int = 7) -> dict:
         # Repas du jour
         repas_docs = (
             db.collection("users")
-            .document(uid)
+            .doc(uid)
             .collection("meals")
             .where("date", "==", date_key)
             .order_by("heure")
@@ -202,7 +202,7 @@ def bilan_calorique_jour(email: str) -> dict:
     # Repas du jour
     repas_docs = (
         db.collection("users")
-        .document(uid)
+        .doc(uid)
         .collection("meals")
         .where("date", "==", date_key)
         .order_by("heure")
@@ -228,15 +228,21 @@ def bilan_calorique_jour(email: str) -> dict:
             "calories": cal,
         })
 
-    # Objectif calorique depuis le profil (BMR simplifié si pas de métabolisme calculé)
-    poids_objectif = user.get("goalWeight") or user.get("diagnosticObjectif") or 70
-    taille_cm = user.get("heightCm") or 170
+    # Objectif calorique — formule Harris-Benedict (identique à metabolic_service.dart)
+    a = user.get("diagnosticAnswers") or {}
+    sexe = str(a.get("sexe") or "Homme")
+    age = int(a.get("age") or 30)
+    taille_cm = int(a.get("taille") or user.get("heightCm") or 170)
+    poids = float(a.get("poids") or 80.0)
 
-    # Estimation TDEE simplifié (activité modérée) pour la perte de poids
-    # BMR Mifflin-St Jeor approximatif sans genre → valeur moyenne
-    bmr = 10 * poids_objectif + 6.25 * taille_cm - 5 * 30 + 5
-    objectif_cal = int(bmr * 1.4)  # Activité légère
-    objectif_deficit = max(1200, objectif_cal - 300)  # Déficit de 300 kcal
+    if sexe == "Homme":
+        bmr = 88.36 + (13.4 * poids) + (4.8 * taille_cm) - (5.7 * age)
+    else:
+        bmr = 447.6 + (9.25 * poids) + (3.1 * taille_cm) - (4.3 * age)
+
+    tdee_repos = bmr * 1.2
+    kcal_min = 1500.0 if sexe == "Homme" else 1200.0
+    objectif_deficit = max(kcal_min, min(tdee_repos, tdee_repos - 500))
 
     reste = objectif_deficit - total_cal
 

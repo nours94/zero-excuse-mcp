@@ -3,6 +3,7 @@ from fastmcp import FastMCP
 from tools.firebase_utils import verifier_plan
 from tools.repas import enregistrer_repas, historique_repas, bilan_calorique_jour
 from tools.poids import poids_du_jour, historique_poids
+from tools.metabolisme import calculer_metabolisme
 
 mcp = FastMCP("Zero Excuse — Coach Nutrition")
 
@@ -92,8 +93,8 @@ def voir_historique_repas(email: str, jours: int = 7) -> dict:
 def bilan_du_jour(email: str) -> dict:
     """
     Retourne le bilan calorique du jour en cours : calories consommées,
-    objectif calorique calculé depuis le profil Zero Excuse, et calories
-    restantes avant d'atteindre l'objectif.
+    objectif calorique calculé depuis le profil Zero Excuse (formule
+    Harris-Benedict), et calories restantes avant d'atteindre l'objectif.
 
     Exemples de déclenchement :
     - "Combien de calories me reste-t-il aujourd'hui ?"
@@ -132,6 +133,29 @@ def voir_historique_poids(email: str, jours: int = 7) -> dict:
     - "Combien j'ai perdu ce mois-ci ?"
     """
     return historique_poids(email=email, jours=jours)
+
+
+# ── OUTIL 7 : MÉTABOLISME DE BASE ─────────────────────────────────
+@mcp.tool(annotations=READ_ONLY)
+def calculer_metabolisme_base(email: str) -> dict:
+    """
+    Calcule le métabolisme de base (BMR, formule Harris-Benedict) et
+    les indicateurs associés : dépense énergétique totale (TDEE) au
+    repos et en jour d'entraînement, apport calorique cible, déficit,
+    perte de poids estimée par jour/semaine/mois, besoin d'hydratation
+    et morphotype (ecto/méso/endomorphe).
+
+    Se base sur le questionnaire de profil de l'utilisateur (sexe, âge,
+    taille, poids, tour de taille, fréquence et intensité sportive).
+
+    Exemples de déclenchement :
+    - "Quel est mon métabolisme de base ?"
+    - "Combien de calories je brûle par jour ?"
+    - "Combien je vais perdre par semaine ?"
+    - "Combien d'eau je dois boire ?"
+    - "Quel est mon morphotype ?"
+    """
+    return calculer_metabolisme(email=email)
 
 
 # ── DÉMARRAGE ────────────────────────────────────────────────────
