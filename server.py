@@ -4,6 +4,7 @@ from tools.firebase_utils import verifier_plan
 from tools.repas import enregistrer_repas, historique_repas, bilan_calorique_jour
 from tools.poids import poids_du_jour, historique_poids
 from tools.metabolisme import calculer_metabolisme
+from tools.analyse import analyser_progression
 
 mcp = FastMCP("Zero Excuse — Coach Nutrition")
 
@@ -156,6 +157,28 @@ def calculer_metabolisme_base(email: str) -> dict:
     - "Quel est mon morphotype ?"
     """
     return calculer_metabolisme(email=email)
+
+
+# ── OUTIL 8 : ANALYSE APPROFONDIE DE LA PROGRESSION ───────────────
+@mcp.tool(annotations=READ_ONLY)
+def analyser_progression_complete(email: str, jours: int = 21) -> dict:
+    """
+    Analyse approfondie de la progression : compare le rythme RÉEL de
+    perte/prise de poids (mesuré sur l'historique des pesées des X derniers
+    jours) au rythme THÉORIQUE calculé depuis le métabolisme de base
+    (Harris-Benedict), et projette le nombre de semaines restantes avant
+    d'atteindre l'objectif, aux deux rythmes.
+
+    Exclut automatiquement les pesées marquées comme exceptionnelles
+    (voyage, maladie, règles, etc.) pour ne pas fausser l'analyse.
+
+    Exemples de déclenchement :
+    - "Suis-je dans les temps par rapport à mon objectif ?"
+    - "Est-ce que je progresse assez vite ?"
+    - "Dans combien de temps vais-je atteindre mon objectif ?"
+    - "Compare ma progression réelle à ce que mon métabolisme permettrait"
+    """
+    return analyser_progression(email=email, jours=jours)
 
 
 # ── DÉMARRAGE ────────────────────────────────────────────────────
