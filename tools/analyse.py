@@ -11,6 +11,114 @@ from tools.firebase_utils import get_db, trouver_utilisateur_par_email, date_key
 from tools.metabolisme import calculer_metabolisme
 
 
+def _determiner_gravite(objectif_type: str, rythme_reel_semaine: float, statut: str) -> str:
+    """
+    Détermine la gravité de la situation pour calibrer le ton du verdict :
+    catastrophique / mauvais / retard / correct / excellent.
+    """
+    if objectif_type == "perte":
+        if rythme_reel_semaine > 0.3:
+            return "catastrophique"  # prise significative alors que l'objectif est de perdre
+        if rythme_reel_semaine > 0:
+            return "mauvais"  # prise, même légère
+        if statut == "en_retard":
+            return "retard"
+        if statut == "en_avance":
+            return "excellent"
+        return "correct"
+    else:  # prise de poids
+        if rythme_reel_semaine < -0.3:
+            return "catastrophique"  # perte significative alors que l'objectif est de prendre
+        if rythme_reel_semaine < 0:
+            return "mauvais"
+        if statut == "en_retard":
+            return "retard"
+        if statut == "en_avance":
+            return "excellent"
+        return "correct"
+
+
+def _generer_verdict_zero_excuse(
+    gravite, objectif_type, variation_totale, nb_jours_effectifs,
+    rythme_reel_semaine, rythme_theorique_semaine, ecart_objectif,
+    objectif_kg, poids_fin, projection_semaines_reel,
+) -> str:
+    """
+    Génère le verdict dans l'esprit Zero Excuse : intransigeant et direct
+    face à un mauvais résultat, valorisant et cash quand le résultat est bon.
+    Ton déterministe — ne dépend pas de la génération du LLM appelant.
+    """
+    reste = abs(ecart_objectif)
+    mot_direction = "perdre" if objectif_type == "perte" else "prendre"
+    signe_var = "+" if variation_totale > 0 else ""
+
+    if gravite == "catastrophique":
+        return (
+            "🚨 ALERTE ZERO EXCUSE — RÉSULTAT CATASTROPHIQUE\n\n"
+            f"Ton objectif est de {mot_direction} du poids. Pourtant, sur les {nb_jours_effectifs} derniers jours, "
+            f"ton poids a évolué de {signe_var}{variation_totale} kg dans le mauvais sens "
+            f"({rythme_reel_semaine:+.2f} kg/semaine, alors que le rythme théorique visé est de {rythme_theorique_semaine:+.2f} kg/semaine). "
+            "Tu ne stagnes pas : tu t'éloignes clairement de ton objectif.\n\n"
+            "Les fluctuations d'eau ou de sel peuvent expliquer des écarts ponctuels, mais pas une tendance aussi nette sur cette durée. "
+            "Il faut arrêter de chercher une explication rassurante : ce que tu fais actuellement ne fonctionne pas.\n\n"
+            "Dès aujourd'hui :\n"
+            "• chaque repas est enregistré, sans omission ;\n"
+            "• les quantités sont réellement mesurées ;\n"
+            "• aucun grignotage n'est minimisé ou oublié ;\n"
+            "• la pesée est faite chaque matin, dans les mêmes conditions ;\n"
+            "• l'apport calorique cible est respecté avec constance.\n\n"
+            f"Ton objectif est à {objectif_kg} kg et tu en es à {poids_fin} kg. Il reste {reste:.1f} kg à {mot_direction}. "
+            "Si rien ne change, tu ne l'atteindras pas.\n\n"
+            "Tu n'as pas besoin d'une nouvelle excuse ni d'une nouvelle promesse. Tu as besoin d'actions mesurables, "
+            "répétées chaque jour. Reprends le contrôle maintenant. Zero Excuse."
+        )
+
+    if gravite == "mauvais":
+        return (
+            "⚠️ Le verdict Zero Excuse : ce n'est pas bon.\n\n"
+            f"Sur les {nb_jours_effectifs} derniers jours, ton poids est allé dans le mauvais sens "
+            f"({rythme_reel_semaine:+.2f} kg/semaine) alors que ton objectif est de {mot_direction} du poids.\n\n"
+            "Ce n'est pas une catastrophe, mais ça ne va clairement pas dans la bonne direction. "
+            "Il est temps de resserrer les choses : respecte ton apport calorique cible, mesure ce que tu manges, "
+            "et pèse-toi chaque matin dans les mêmes conditions.\n\n"
+            f"Il te reste {reste:.1f} kg pour atteindre {objectif_kg} kg. Ça ne se fera pas tout seul. "
+            "Reprends la main dès aujourd'hui. Zero Excuse."
+        )
+
+    if gravite == "retard":
+        return (
+            "⚠️ Le verdict Zero Excuse : tu n'es pas dans les temps.\n\n"
+            f"Tu avances dans la bonne direction ({rythme_reel_semaine:+.2f} kg/semaine), mais trop lentement : "
+            f"ton métabolisme permettrait {rythme_theorique_semaine:+.2f} kg/semaine. Ce n'est pas un échec, "
+            "mais ce n'est pas suffisant non plus.\n\n"
+            "Pas besoin d'être parfait. En revanche, tu dois être régulier et honnête avec toi-même : "
+            "vérifie ton apport calorique réel, surveille les portions, et pèse-toi chaque matin dans les mêmes conditions.\n\n"
+            f"Il reste {reste:.1f} kg avant {objectif_kg} kg"
+            + (f", soit environ {projection_semaines_reel} semaines à ce rythme réel." if projection_semaines_reel else ".")
+            + " Tu peux encore reprendre le contrôle, mais cela commence aujourd'hui. Zero Excuse."
+        )
+
+    if gravite == "correct":
+        return (
+            "✅ Le verdict Zero Excuse : c'est dans les clous.\n\n"
+            f"Ta progression réelle ({rythme_reel_semaine:+.2f} kg/semaine) correspond bien à ce que ton métabolisme permet "
+            f"({rythme_theorique_semaine:+.2f} kg/semaine). Continue exactement comme ça, sans relâchement.\n\n"
+            f"Il reste {reste:.1f} kg avant {objectif_kg} kg"
+            + (f", soit environ {projection_semaines_reel} semaines à ce rythme." if projection_semaines_reel else ".")
+            + " La régularité paie. Zero Excuse."
+        )
+
+    # excellent
+    return (
+        "🎯 Le verdict Zero Excuse : excellent travail.\n\n"
+        f"Ta progression réelle ({rythme_reel_semaine:+.2f} kg/semaine) dépasse même ce que ton métabolisme théorique "
+        f"permettrait ({rythme_theorique_semaine:+.2f} kg/semaine). C'est du sérieux, continue exactement ainsi.\n\n"
+        f"Il reste {reste:.1f} kg avant {objectif_kg} kg"
+        + (f", soit environ {projection_semaines_reel} semaines à ce rythme." if projection_semaines_reel else ".")
+        + " Ne relâche rien maintenant. Zero Excuse."
+    )
+
+
 def analyser_progression(email: str, jours: int = 21) -> dict:
     """
     Analyse la progression réelle par rapport à l'objectif et au métabolisme.
@@ -109,11 +217,21 @@ def analyser_progression(email: str, jours: int = 21) -> dict:
     if abs(rythme_theorique_semaine) > 0.01 and abs(ecart_objectif) > 0.01:
         projection_semaines_theorique = round(abs(ecart_objectif / rythme_theorique_semaine), 1)
 
-    messages_statut = {
-        "en_avance": "Vous progressez plus vite que ce que votre métabolisme théorique prévoit — excellent rythme.",
-        "dans_les_temps": "Votre progression réelle correspond bien à ce que prévoit votre métabolisme théorique.",
-        "en_retard": "Votre progression réelle est plus lente que ce que votre métabolisme théorique permettrait. Vérifiez votre apport calorique réel.",
-    }
+    # 6. Détermination de la gravité (pour le ton du verdict)
+    gravite = _determiner_gravite(objectif_type, rythme_reel_semaine, statut)
+
+    verdict = _generer_verdict_zero_excuse(
+        gravite=gravite,
+        objectif_type=objectif_type,
+        variation_totale=variation_totale,
+        nb_jours_effectifs=nb_jours_effectifs,
+        rythme_reel_semaine=rythme_reel_semaine,
+        rythme_theorique_semaine=rythme_theorique_semaine,
+        ecart_objectif=ecart_objectif,
+        objectif_kg=objectif_kg,
+        poids_fin=poids_fin,
+        projection_semaines_reel=projection_semaines_reel,
+    )
 
     return {
         "succes": True,
@@ -126,19 +244,11 @@ def analyser_progression(email: str, jours: int = 21) -> dict:
         "rythme_theorique_kg_semaine": rythme_theorique_semaine,
         "ecart_kg_semaine": ecart,
         "statut": statut,
+        "gravite": gravite,
         "objectif_kg": objectif_kg,
         "ecart_objectif_kg": ecart_objectif,
         "projection_semaines_au_rythme_reel": projection_semaines_reel,
         "projection_semaines_au_rythme_theorique": projection_semaines_theorique,
         "metabolisme": metabo,
-        "message": (
-            f"{messages_statut[statut]} "
-            f"Rythme réel : {rythme_reel_semaine:+.2f} kg/semaine (sur {nb_jours_effectifs} jours, {len(pesees)} pesées). "
-            f"Rythme théorique attendu : {rythme_theorique_semaine:+.2f} kg/semaine. "
-            + (
-                f"À ce rythme réel, vous atteindrez votre objectif dans environ {projection_semaines_reel} semaines."
-                if projection_semaines_reel else
-                "Impossible d'estimer un délai précis avec les données actuelles."
-            )
-        ),
+        "message": verdict,
     }
