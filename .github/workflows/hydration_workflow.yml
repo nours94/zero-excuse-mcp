@@ -1,0 +1,24 @@
+name: Rappels hydratation
+
+on:
+  schedule:
+    - cron: "0 * * * *"   # toutes les heures ; le script filtre lui-même 10h/14h/18h Paris
+  workflow_dispatch:
+
+jobs:
+  send-hydration-reminders:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Installer les dépendances
+        run: pip install firebase-admin
+
+      - name: Envoyer les rappels si l'heure correspond
+        env:
+          FIREBASE_SERVICE_ACCOUNT_JSON: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_JSON }}
+        run: python mcp_addon/send_hydration_reminders.py
