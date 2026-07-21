@@ -24,7 +24,7 @@ import smtplib
 from email.mime.text import MIMEText
 
 import firebase_admin
-from firebase_admin import credentials, firestore, messaging
+from firebase_admin import credentials, firestore, messaging, auth
 
 # ── Initialisation Firebase Admin ────────────────────────────────
 if not firebase_admin._apps:
@@ -117,5 +117,33 @@ def traiter_rapports_en_attente():
         print(f"✓ Rapport {doc.id} traité pour {uid} (email={envoye_email}, push={envoye_push})")
 
 
+def traiter_suppressions_de_compte():
+    # Ecrit par admin.js dans deletion_requests/{uid} quand le coach supprime
+    # un utilisateur. Les données Firestore sont déjà supprimées côté admin ;
+    # il ne reste que le compte Firebase Auth, qui nécessite le SDK Admin.
+    requests_ref = db.collection("deletion_requests")
+    docs = list(requests_ref.stream())
+
+    if not docs:
+        print("Aucune suppression de compte en attente.")
+        return
+
+    for doc in docs:
+        uid = doc.id
+        data = doc.to_dict() or {}
+        email = data.get("email", "(email inconnu)")
+        try:
+            auth.delete_user(uid)
+            print(f"✓ Compte Auth supprimé pour {uid} ({email})")
+        except auth.UserNotFoundError:
+            print(f"ℹ️ Compte Auth déjà absent pour {uid} ({email})")
+        except Exception as e:
+            print(f"⚠️ Échec suppression Auth pour {uid} ({email}) : {e}")
+            continue  # ne supprime pas la demande si la suppression a échoué
+
+        doc.reference.delete()
+
+
 if __name__ == "__main__":
     traiter_rapports_en_attente()
+    traiter_suppressions_de_compte()
