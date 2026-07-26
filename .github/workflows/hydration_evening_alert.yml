@@ -1,0 +1,26 @@
+name: Alerte hydratation du soir
+
+on:
+  schedule:
+    - cron: "0 * * * *"   # toutes les heures ; le script filtre lui-même 20h-21h59 Paris
+  workflow_dispatch:
+
+jobs:
+  send-evening-alert:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Installer les dépendances
+        run: pip install firebase-admin
+
+      - name: Vérifier et alerter si nécessaire
+        env:
+          FIREBASE_SERVICE_ACCOUNT_JSON: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_JSON }}
+          GMAIL_ADDRESS: ${{ secrets.GMAIL_ADDRESS }}
+          GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+        run: python mcp_addon/send_hydration_evening_alert.py
