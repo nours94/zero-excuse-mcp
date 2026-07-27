@@ -17,6 +17,7 @@ import json
 import os
 import smtplib
 from email.mime.text import MIMEText
+from email.utils import formataddr
 
 import firebase_admin
 from firebase_admin import credentials, firestore, messaging
@@ -37,7 +38,7 @@ def envoyer_email(destinataire, texte):
         "plain", "utf-8",
     )
     msg["Subject"] = "📢 Nouvelle annonce — Zero Excuse"
-    msg["From"] = GMAIL_ADDRESS
+    msg["From"] = formataddr(("Zero Excuse", GMAIL_ADDRESS))
     msg["To"] = destinataire
     with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
         server.login(GMAIL_ADDRESS, GMAIL_APP_PASSWORD)

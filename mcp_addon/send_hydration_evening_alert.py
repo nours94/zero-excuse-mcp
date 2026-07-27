@@ -24,6 +24,7 @@ import os
 import smtplib
 from datetime import datetime
 from email.mime.text import MIMEText
+from email.utils import formataddr
 from zoneinfo import ZoneInfo
 
 import firebase_admin
@@ -60,7 +61,7 @@ def envoyer_email(destinataire):
         "plain", "utf-8",
     )
     msg["Subject"] = "💧 Pense à finir ton objectif hydratation — Zero Excuse"
-    msg["From"] = GMAIL_ADDRESS
+    msg["From"] = formataddr(("Zero Excuse", GMAIL_ADDRESS))
     msg["To"] = destinataire
     with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
         server.login(GMAIL_ADDRESS, GMAIL_APP_PASSWORD)
