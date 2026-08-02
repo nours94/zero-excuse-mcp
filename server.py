@@ -1,6 +1,8 @@
 import os
 from fastmcp import FastMCP
-from tools.firebase_utils import verifier_plan
+from starlette.requests import Request
+from starlette.responses import JSONResponse
+from tools.firebase_utils import verifier_plan, trouver_utilisateur_par_api_key
 from tools.repas import enregistrer_repas, historique_repas, bilan_calorique_jour
 from tools.poids import poids_du_jour, historique_poids
 from tools.metabolisme import calculer_metabolisme
@@ -179,6 +181,227 @@ def analyser_progression_complete(email: str, jours: int = 21) -> dict:
     - "Compare ma progression réelle à ce que mon métabolisme permettrait"
     """
     return analyser_progression(email=email, jours=jours)
+
+
+# ══════════════════════════════════════════════════════════════════
+# PONT REST — pour l'Action ChatGPT (authentification par clé API)
+# ══════════════════════════════════════════════════════════════════
+# Ces routes réutilisent exactement les mêmes fonctions que les outils
+# MCP ci-dessus, mais identifient l'utilisateur via sa clé API
+# personnelle (header Authorization: Bearer <clé>) plutôt que par email.
+# Compatible avec un compte ChatGPT gratuit (Actions classiques, pas
+# besoin de connecteur MCP ni de compte Plus/Pro).
+
+def _auth_email(request: Request) -> tuple[str | None, JSONResponse | None]:
+    """
+    Extrait la clé API du header Authorization, retrouve l'utilisateur
+    correspondant, et renvoie son email. En cas d'échec, renvoie une
+    JSONResponse d'erreur prête à être retournée telle quelle.
+    """
+    auth_header = request.headers.get("authorization", "")
+    if not auth_header.lower().startswith("bearer "):
+        return None, JSONResponse(
+            {"succes": False, "message": "Clé API manquante (header Authorization: Bearer <clé>)."},
+            status_code=401,
+        )
+
+    api_key = auth_header[7:].strip()
+    user = trouver_utilisateur_par_api_key(api_key)
+    if not user:
+        return None, JSONResponse(
+            {"succes": False, "message": "Clé API invalide ou inconnue."},
+            status_code=401,
+        )
+
+    return user.get("email"), None
+
+
+@mcp.custom_route("/api/verifier-compte", methods=["GET"])
+async def api_verifier_compte(request: Request) -> JSONResponse:
+    email, err = _auth_email(request)
+    if err:
+        return err
+    return JSONResponse(verifier_plan(email))
+
+
+@mcp.custom_route("/api/repas", methods=["POST"])
+async def api_sauvegarder_repas(request: Request) -> JSONResponse:
+    email, err = _auth_email(request)
+    if err:
+        return err
+    body = await request.json()
+    result = enregistrer_repas(
+        email=email,
+        aliments=body.get("aliments", []),
+        calories=body.get("calories", 0),
+        proteines=body.get("proteines"),
+        glucides=body.get("glucides"),
+        lipides=body.get("lipides"),
+        repas_type=body.get("repas_type", "repas"),
+        notes=body.get("notes", ""),
+    )
+    return JSONResponse(result)
+
+
+@mcp.custom_route("/api/historique-repas", methods=["GET"])
+async def api_historique_repas(request: Request) -> JSONResponse:
+    email, err = _auth_email(request)
+    if err:
+        return err
+    jours = max(1, min(int(request.query_params.get("jours", 7)), 30))
+    return JSONResponse(historique_repas(email=email, jours=jours))
+
+
+@mcp.custom_route("/api/bilan-jour", methods=["GET"])
+async def api_bilan_jour(request: Request) -> JSONResponse:
+    email, err = _auth_email(request)
+    if err:
+        return err
+    return JSONResponse(bilan_calorique_jour(email=email))
+
+
+@mcp.custom_route("/api/poids-jour", methods=["GET"])
+async def api_poids_jour(request: Request) -> JSONResponse:
+    email, err = _auth_email(request)
+    if err:
+        return err
+    return JSONResponse(poids_du_jour(email=email))
+
+
+@mcp.custom_route("/api/historique-poids", methods=["GET"])
+async def api_historique_poids(request: Request) -> JSONResponse:
+    email, err = _auth_email(request)
+    if err:
+        return err
+    jours = max(1, min(int(request.query_params.get("jours", 7)), 30))
+    return JSONResponse(historique_poids(email=email, jours=jours))
+
+
+@mcp.custom_route("/api/metabolisme", methods=["GET"])
+async def api_metabolisme(request: Request) -> JSONResponse:
+    email, err = _auth_email(request)
+    if err:
+        return err
+    return JSONResponse(calculer_metabolisme(email=email))
+
+
+@mcp.custom_route("/api/progression", methods=["GET"])
+async def api_progression(request: Request) -> JSONResponse:
+    email, err = _auth_email(request)
+    if err:
+        return err
+    jours = max(1, min(int(request.query_params.get("jours", 21)), 90))
+    return JSONResponse(analyser_progression(email=email, jours=jours))
+
+
+@mcp.custom_route("/openapi.json", methods=["GET"])
+async def openapi_schema(request: Request) -> JSONResponse:
+    base_url = str(request.base_url).rstrip("/")
+    return JSONResponse({
+        "openapi": "3.1.0",
+        "info": {
+            "title": "Zero Excuse — Coach Nutrition",
+            "description": "Enregistrement et consultation des repas, poids et métabolisme Zero Excuse.",
+            "version": "1.0.0",
+        },
+        "servers": [{"url": base_url}],
+        "components": {
+            "securitySchemes": {
+                "bearerAuth": {"type": "http", "scheme": "bearer"}
+            }
+        },
+        "security": [{"bearerAuth": []}],
+        "paths": {
+            "/api/verifier-compte": {
+                "get": {
+                    "operationId": "verifierCompte",
+                    "summary": "Vérifie le compte Zero Excuse associé à la clé API.",
+                    "responses": {"200": {"description": "OK"}},
+                }
+            },
+            "/api/repas": {
+                "post": {
+                    "operationId": "sauvegarderRepas",
+                    "summary": "Enregistre un repas analysé (aliments, calories, macros).",
+                    "requestBody": {
+                        "required": True,
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "required": ["aliments", "calories"],
+                                    "properties": {
+                                        "aliments": {"type": "array", "items": {"type": "string"}},
+                                        "calories": {"type": "integer"},
+                                        "proteines": {"type": "number", "nullable": True},
+                                        "glucides": {"type": "number", "nullable": True},
+                                        "lipides": {"type": "number", "nullable": True},
+                                        "repas_type": {"type": "string", "default": "repas"},
+                                        "notes": {"type": "string", "default": ""},
+                                    },
+                                }
+                            }
+                        },
+                    },
+                    "responses": {"200": {"description": "OK"}},
+                }
+            },
+            "/api/historique-repas": {
+                "get": {
+                    "operationId": "historiqueRepas",
+                    "summary": "Historique des repas des X derniers jours.",
+                    "parameters": [{
+                        "name": "jours", "in": "query", "required": False,
+                        "schema": {"type": "integer", "default": 7},
+                    }],
+                    "responses": {"200": {"description": "OK"}},
+                }
+            },
+            "/api/bilan-jour": {
+                "get": {
+                    "operationId": "bilanJour",
+                    "summary": "Bilan calorique du jour en cours.",
+                    "responses": {"200": {"description": "OK"}},
+                }
+            },
+            "/api/poids-jour": {
+                "get": {
+                    "operationId": "poidsJour",
+                    "summary": "Poids enregistré aujourd'hui.",
+                    "responses": {"200": {"description": "OK"}},
+                }
+            },
+            "/api/historique-poids": {
+                "get": {
+                    "operationId": "historiquePoids",
+                    "summary": "Historique des pesées des X derniers jours.",
+                    "parameters": [{
+                        "name": "jours", "in": "query", "required": False,
+                        "schema": {"type": "integer", "default": 7},
+                    }],
+                    "responses": {"200": {"description": "OK"}},
+                }
+            },
+            "/api/metabolisme": {
+                "get": {
+                    "operationId": "metabolisme",
+                    "summary": "Métabolisme de base (BMR/TDEE) et objectifs caloriques.",
+                    "responses": {"200": {"description": "OK"}},
+                }
+            },
+            "/api/progression": {
+                "get": {
+                    "operationId": "progression",
+                    "summary": "Analyse de la progression réelle vs théorique.",
+                    "parameters": [{
+                        "name": "jours", "in": "query", "required": False,
+                        "schema": {"type": "integer", "default": 21},
+                    }],
+                    "responses": {"200": {"description": "OK"}},
+                }
+            },
+        },
+    })
 
 
 # ── DÉMARRAGE ────────────────────────────────────────────────────

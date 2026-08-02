@@ -61,6 +61,29 @@ def trouver_utilisateur_par_email(email: str) -> dict | None:
     return data
 
 
+# ── Recherche utilisateur par clé API (pour l'Action ChatGPT) ──────
+def trouver_utilisateur_par_api_key(api_key: str) -> dict | None:
+    """
+    Recherche un utilisateur Zero Excuse dans Firestore par sa clé API
+    personnelle (champ `apiKey`, généré côté site dans le profil).
+    Retourne ses données (avec `uid` et `email`) ou None si introuvable
+    ou si la clé est vide.
+    """
+    if not api_key or not api_key.strip():
+        return None
+
+    db = get_db()
+    users = db.collection("users").where("apiKey", "==", api_key.strip()).limit(1).get()
+
+    if not users:
+        return None
+
+    doc = users[0]
+    data = doc.to_dict()
+    data["uid"] = doc.id
+    return data
+
+
 # ── Vérification plan utilisateur ──────────────────────────────────
 def verifier_plan(email: str) -> dict:
     """
