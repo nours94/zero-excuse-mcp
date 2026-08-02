@@ -1,7 +1,9 @@
-﻿name: Keep zero-excuse-mcp awake
+name: Keep zero-excuse-mcp awake
 
 on:
   schedule:
+    # Toutes les 10 minutes — le plan gratuit Render met le service en veille
+    # après ~15 min d'inactivité, donc un ping plus fréquent que ça est nécessaire
     - cron: "*/10 * * * *"
   workflow_dispatch: {}
 
@@ -11,5 +13,4 @@ jobs:
     steps:
       - name: Ping le serveur Render
         run: |
-          curl -s -o /dev/null -w "Statut HTTP : %{http_code}\n" \
-            https://zero-excuse-mcp.onrender.com/ || true
+          curl -s -o /dev/null -w "Statut HTTP : %{http_code}\n" https://zero-excuse-mcp.onrender.com/openapi.json
