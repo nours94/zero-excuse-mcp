@@ -132,13 +132,13 @@ def historique_repas(email: str, jours: int = 7) -> dict:
     calories_par_jour = {}
 
     for date_key in dates:
-        # Repas du jour
+        # Repas du jour — tri fait en Python (pas de .order_by ici) pour éviter
+        # de dépendre d'un index composite Firestore sur (date ==, heure asc).
         repas_docs = (
             db.collection("users")
             .doc(uid)
             .collection("meals")
             .where("date", "==", date_key)
-            .order_by("heure")
             .get()
         )
 
@@ -156,6 +156,8 @@ def historique_repas(email: str, jours: int = 7) -> dict:
                 "lipides_g": data.get("lipides_g"),
             })
             total_cal += data.get("calories", 0) or 0
+
+        repas_du_jour.sort(key=lambda r: r["heure"])
 
         if repas_du_jour:
             repas_par_jour[date_key] = repas_du_jour
@@ -199,13 +201,13 @@ def bilan_calorique_jour(email: str) -> dict:
     db = get_db()
     date_key = date_key_paris()
 
-    # Repas du jour
+    # Repas du jour — tri fait en Python (pas de .order_by ici) pour éviter
+    # de dépendre d'un index composite Firestore sur (date ==, heure asc).
     repas_docs = (
         db.collection("users")
         .doc(uid)
         .collection("meals")
         .where("date", "==", date_key)
-        .order_by("heure")
         .get()
     )
 
@@ -227,6 +229,8 @@ def bilan_calorique_jour(email: str) -> dict:
             "aliments": data.get("aliments", []),
             "calories": cal,
         })
+
+    repas_jour.sort(key=lambda r: r["heure"])
 
     # Objectif calorique — formule Harris-Benedict (identique à metabolic_service.dart)
     a = user.get("diagnosticAnswers") or {}
