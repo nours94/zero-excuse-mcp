@@ -2,7 +2,7 @@ import os
 from fastmcp import FastMCP
 from starlette.requests import Request
 from starlette.responses import JSONResponse
-from tools.firebase_utils import verifier_plan, trouver_utilisateur_par_api_key
+from tools.firebase_utils import verifier_plan
 from tools.repas import enregistrer_repas, historique_repas, bilan_calorique_jour
 from tools.poids import poids_du_jour, historique_poids
 from tools.metabolisme import calculer_metabolisme
@@ -184,41 +184,39 @@ def analyser_progression_complete(email: str, jours: int = 21) -> dict:
 
 
 # ══════════════════════════════════════════════════════════════════
-# PONT REST — pour l'Action ChatGPT (authentification par clé API)
+# PONT REST — pour l'Action ChatGPT (identification par email)
 # ══════════════════════════════════════════════════════════════════
 # Ces routes réutilisent exactement les mêmes fonctions que les outils
-# MCP ci-dessus, mais identifient l'utilisateur via sa clé API
-# personnelle (header Authorization: Bearer <clé>) plutôt que par email.
-# Compatible avec un compte ChatGPT gratuit (Actions classiques, pas
-# besoin de connecteur MCP ni de compte Plus/Pro).
+# MCP ci-dessus. Contrairement à une clé API par utilisateur (qui ne
+# fonctionne PAS avec le type d'authentification "Clé API" de ChatGPT —
+# celle-ci est une clé UNIQUE partagée par tous les utilisateurs du GPT,
+# réglée une seule fois par le créateur, pas par utilisateur), on
+# identifie ici l'utilisateur par son email, transmis à chaque appel —
+# exactement comme pour les outils MCP d'origine. Le GPT doit demander
+# l'email une fois en début de conversation (voir ses Instructions) et
+# le réutiliser pour tous les appels suivants.
 
-def _auth_email(request: Request) -> tuple[str | None, JSONResponse | None]:
+def _get_email(request: Request, body: dict | None = None) -> tuple[str | None, JSONResponse | None]:
     """
-    Extrait la clé API du header Authorization, retrouve l'utilisateur
-    correspondant, et renvoie son email. En cas d'échec, renvoie une
-    JSONResponse d'erreur prête à être retournée telle quelle.
+    Récupère l'email depuis le paramètre de requête ?email=... (GET)
+    ou depuis le corps JSON (POST). Renvoie une erreur si absent.
     """
-    auth_header = request.headers.get("authorization", "")
-    if not auth_header.lower().startswith("bearer "):
+    email = request.query_params.get("email")
+    if not email and body:
+        email = body.get("email")
+
+    if not email or not email.strip():
         return None, JSONResponse(
-            {"succes": False, "message": "Clé API manquante (header Authorization: Bearer <clé>)."},
-            status_code=401,
+            {"succes": False, "message": "Paramètre 'email' manquant. Demande l'email Zero Excuse de l'utilisateur avant d'appeler cet outil."},
+            status_code=400,
         )
 
-    api_key = auth_header[7:].strip()
-    user = trouver_utilisateur_par_api_key(api_key)
-    if not user:
-        return None, JSONResponse(
-            {"succes": False, "message": "Clé API invalide ou inconnue."},
-            status_code=401,
-        )
-
-    return user.get("email"), None
+    return email.strip(), None
 
 
 @mcp.custom_route("/api/verifier-compte", methods=["GET"])
 async def api_verifier_compte(request: Request) -> JSONResponse:
-    email, err = _auth_email(request)
+    email, err = _get_email(request)
     if err:
         return err
     return JSONResponse(verifier_plan(email))
@@ -226,10 +224,10 @@ async def api_verifier_compte(request: Request) -> JSONResponse:
 
 @mcp.custom_route("/api/repas", methods=["POST"])
 async def api_sauvegarder_repas(request: Request) -> JSONResponse:
-    email, err = _auth_email(request)
+    body = await request.json()
+    email, err = _get_email(request, body)
     if err:
         return err
-    body = await request.json()
     result = enregistrer_repas(
         email=email,
         aliments=body.get("aliments", []),
@@ -245,7 +243,7 @@ async def api_sauvegarder_repas(request: Request) -> JSONResponse:
 
 @mcp.custom_route("/api/historique-repas", methods=["GET"])
 async def api_historique_repas(request: Request) -> JSONResponse:
-    email, err = _auth_email(request)
+    email, err = _get_email(request)
     if err:
         return err
     jours = max(1, min(int(request.query_params.get("jours", 7)), 30))
@@ -254,7 +252,7 @@ async def api_historique_repas(request: Request) -> JSONResponse:
 
 @mcp.custom_route("/api/bilan-jour", methods=["GET"])
 async def api_bilan_jour(request: Request) -> JSONResponse:
-    email, err = _auth_email(request)
+    email, err = _get_email(request)
     if err:
         return err
     return JSONResponse(bilan_calorique_jour(email=email))
@@ -262,7 +260,7 @@ async def api_bilan_jour(request: Request) -> JSONResponse:
 
 @mcp.custom_route("/api/poids-jour", methods=["GET"])
 async def api_poids_jour(request: Request) -> JSONResponse:
-    email, err = _auth_email(request)
+    email, err = _get_email(request)
     if err:
         return err
     return JSONResponse(poids_du_jour(email=email))
@@ -270,7 +268,7 @@ async def api_poids_jour(request: Request) -> JSONResponse:
 
 @mcp.custom_route("/api/historique-poids", methods=["GET"])
 async def api_historique_poids(request: Request) -> JSONResponse:
-    email, err = _auth_email(request)
+    email, err = _get_email(request)
     if err:
         return err
     jours = max(1, min(int(request.query_params.get("jours", 7)), 30))
@@ -279,7 +277,7 @@ async def api_historique_poids(request: Request) -> JSONResponse:
 
 @mcp.custom_route("/api/metabolisme", methods=["GET"])
 async def api_metabolisme(request: Request) -> JSONResponse:
-    email, err = _auth_email(request)
+    email, err = _get_email(request)
     if err:
         return err
     return JSONResponse(calculer_metabolisme(email=email))
@@ -287,7 +285,7 @@ async def api_metabolisme(request: Request) -> JSONResponse:
 
 @mcp.custom_route("/api/progression", methods=["GET"])
 async def api_progression(request: Request) -> JSONResponse:
-    email, err = _auth_email(request)
+    email, err = _get_email(request)
     if err:
         return err
     jours = max(1, min(int(request.query_params.get("jours", 21)), 90))
@@ -297,6 +295,11 @@ async def api_progression(request: Request) -> JSONResponse:
 @mcp.custom_route("/openapi.json", methods=["GET"])
 async def openapi_schema(request: Request) -> JSONResponse:
     base_url = str(request.base_url).rstrip("/")
+    email_param = {
+        "name": "email", "in": "query", "required": True,
+        "schema": {"type": "string"},
+        "description": "Email du compte Zero Excuse de l'utilisateur (demande-le au début de la conversation).",
+    }
     return JSONResponse({
         "openapi": "3.1.0",
         "info": {
@@ -305,18 +308,13 @@ async def openapi_schema(request: Request) -> JSONResponse:
             "version": "1.0.0",
         },
         "servers": [{"url": base_url}],
-        "components": {
-            "schemas": {},
-            "securitySchemes": {
-                "bearerAuth": {"type": "http", "scheme": "bearer"}
-            }
-        },
-        "security": [{"bearerAuth": []}],
+        "components": {"schemas": {}},
         "paths": {
             "/api/verifier-compte": {
                 "get": {
                     "operationId": "verifierCompte",
-                    "summary": "Vérifie le compte Zero Excuse associé à la clé API.",
+                    "summary": "Vérifie le compte Zero Excuse associé à l'email fourni. À appeler en premier dans la conversation.",
+                    "parameters": [email_param],
                     "responses": {"200": {"description": "OK"}},
                 }
             },
@@ -330,8 +328,9 @@ async def openapi_schema(request: Request) -> JSONResponse:
                             "application/json": {
                                 "schema": {
                                     "type": "object",
-                                    "required": ["aliments", "calories"],
+                                    "required": ["email", "aliments", "calories"],
                                     "properties": {
+                                        "email": {"type": "string", "description": "Email Zero Excuse de l'utilisateur."},
                                         "aliments": {"type": "array", "items": {"type": "string"}},
                                         "calories": {"type": "integer"},
                                         "proteines": {"type": "number", "nullable": True},
@@ -351,7 +350,7 @@ async def openapi_schema(request: Request) -> JSONResponse:
                 "get": {
                     "operationId": "historiqueRepas",
                     "summary": "Historique des repas des X derniers jours.",
-                    "parameters": [{
+                    "parameters": [email_param, {
                         "name": "jours", "in": "query", "required": False,
                         "schema": {"type": "integer", "default": 7},
                     }],
@@ -362,6 +361,7 @@ async def openapi_schema(request: Request) -> JSONResponse:
                 "get": {
                     "operationId": "bilanJour",
                     "summary": "Bilan calorique du jour en cours.",
+                    "parameters": [email_param],
                     "responses": {"200": {"description": "OK"}},
                 }
             },
@@ -369,6 +369,7 @@ async def openapi_schema(request: Request) -> JSONResponse:
                 "get": {
                     "operationId": "poidsJour",
                     "summary": "Poids enregistré aujourd'hui.",
+                    "parameters": [email_param],
                     "responses": {"200": {"description": "OK"}},
                 }
             },
@@ -376,7 +377,7 @@ async def openapi_schema(request: Request) -> JSONResponse:
                 "get": {
                     "operationId": "historiquePoids",
                     "summary": "Historique des pesées des X derniers jours.",
-                    "parameters": [{
+                    "parameters": [email_param, {
                         "name": "jours", "in": "query", "required": False,
                         "schema": {"type": "integer", "default": 7},
                     }],
@@ -387,6 +388,7 @@ async def openapi_schema(request: Request) -> JSONResponse:
                 "get": {
                     "operationId": "metabolisme",
                     "summary": "Métabolisme de base (BMR/TDEE) et objectifs caloriques.",
+                    "parameters": [email_param],
                     "responses": {"200": {"description": "OK"}},
                 }
             },
@@ -394,7 +396,7 @@ async def openapi_schema(request: Request) -> JSONResponse:
                 "get": {
                     "operationId": "progression",
                     "summary": "Analyse de la progression réelle vs théorique.",
-                    "parameters": [{
+                    "parameters": [email_param, {
                         "name": "jours", "in": "query", "required": False,
                         "schema": {"type": "integer", "default": 21},
                     }],
