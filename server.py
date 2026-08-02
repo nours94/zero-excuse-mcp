@@ -306,6 +306,7 @@ async def openapi_schema(request: Request) -> JSONResponse:
         },
         "servers": [{"url": base_url}],
         "components": {
+            "schemas": {},
             "securitySchemes": {
                 "bearerAuth": {"type": "http", "scheme": "bearer"}
             }
