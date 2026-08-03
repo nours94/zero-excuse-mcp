@@ -23,7 +23,7 @@ def enregistrer_repas(
     Appelé après que ChatGPT a analysé la photo de l'assiette.
 
     Structure Firestore :
-    users/{uid}/meals/{YYYY-MM-DD}/{repas_id}
+    users/{uid}/meals/{YYYY-MM-DD_HH-MM-SS}
     """
     user = trouver_utilisateur_par_email(email)
 
