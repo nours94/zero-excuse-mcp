@@ -288,11 +288,15 @@ async def api_sauvegarder_repas(request: Request) -> JSONResponse:
     # openaiFileIdRefs : rempli automatiquement par ChatGPT avec la/les photo(s)
     # de la conversation, si le paramètre est déclaré dans le schéma (voir
     # /openapi.json). Chaque élément est un objet {name, id, mime_type,
-    # download_link} — le lien n'est valable que 5 minutes, d'où le
-    # téléchargement immédiat fait dans enregistrer_repas.
+    # download_link} — les liens ne sont valables que 5 minutes, d'où le
+    # téléchargement immédiat fait dans enregistrer_repas. Toutes les photos
+    # fournies sont prises en compte (ex. entrée/plat/dessert du même repas).
     file_refs = body.get("openaiFileIdRefs") or []
-    photo_link = file_refs[0].get("download_link") if file_refs else None
-    photo_mime = file_refs[0].get("mime_type", "image/jpeg") if file_refs else "image/jpeg"
+    print(f"[api_sauvegarder_repas] openaiFileIdRefs reçu : {file_refs}")
+    photo_refs = [
+        {"download_link": f.get("download_link"), "mime_type": f.get("mime_type", "image/jpeg")}
+        for f in file_refs if f.get("download_link")
+    ]
 
     result = enregistrer_repas(
         email=email,
@@ -303,8 +307,7 @@ async def api_sauvegarder_repas(request: Request) -> JSONResponse:
         lipides=body.get("lipides"),
         repas_type=body.get("repas_type", "repas"),
         notes=body.get("notes", ""),
-        photo_download_link=photo_link,
-        photo_mime_type=photo_mime,
+        photo_refs=photo_refs,
     )
     return JSONResponse(result)
 
@@ -445,7 +448,7 @@ async def openapi_schema(request: Request) -> JSONResponse:
                                         "openaiFileIdRefs": {
                                             "type": "array",
                                             "items": {"type": "string"},
-                                            "description": "La photo du repas envoyée par l'utilisateur dans cette conversation (une seule suffit, la première sera utilisée).",
+                                            "description": "La ou les photo(s) du repas envoyée(s) par l'utilisateur dans cette conversation (par exemple une photo par plat si le repas comporte entrée/plat/dessert). Toutes les photos fournies seront associées à ce repas.",
                                         },
                                     },
                                 }

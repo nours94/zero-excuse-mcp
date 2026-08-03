@@ -43,12 +43,15 @@ def enregistrer_repas(
     lipides: float | None = None,
     repas_type: str = "repas",
     notes: str = "",
-    photo_download_link: str | None = None,
-    photo_mime_type: str = "image/jpeg",
+    photo_refs: list[dict] | None = None,
 ) -> dict:
     """
     Enregistre un repas analysé par ChatGPT dans Firebase Zero Excuse.
     Appelé après que ChatGPT a analysé la photo de l'assiette.
+
+    photo_refs : liste de {"download_link": ..., "mime_type": ...} —
+    plusieurs photos possibles pour un même repas (ex. entrée/plat/dessert
+    photographiés séparément mais enregistrés ensemble).
 
     Structure Firestore :
     users/{uid}/meals/{YYYY-MM-DD_HH-MM-SS}
@@ -75,23 +78,31 @@ def enregistrer_repas(
     # ID du repas : date + heure (permet plusieurs repas par jour)
     repas_id = f"{date_key}_{now.strftime('%H-%M-%S')}"
 
-    # Photo envoyée par l'utilisateur dans la conversation ChatGPT (optionnelle) :
-    # on la re-héberge sur Supabase et on l'ajoute au MÊME journal photo que
-    # celles prises depuis le site, avec un flag "source" pour les distinguer.
-    photo_url = None
-    if photo_download_link:
-        photo_url = uploader_photo_depuis_chatgpt(photo_download_link, uid, photo_mime_type)
-        if photo_url:
-            db.collection("users").document(uid).collection("meal_notes").document(date_key).set({
-                "date": date_key,
-                "photos": firestore.ArrayUnion([{
-                    "url": photo_url,
-                    "uploadedAt": now.isoformat(),
-                    "meal": _tag_repas(repas_type, now),
-                    "source": "chatgpt",
-                }]),
-                "updatedAt": firestore.SERVER_TIMESTAMP,
-            }, merge=True)
+    # Photo(s) envoyée(s) par l'utilisateur dans la conversation ChatGPT
+    # (optionnelles, potentiellement plusieurs) : re-hébergées sur Supabase
+    # et ajoutées au MÊME journal photo que celles prises depuis le site,
+    # avec un flag "source" pour les distinguer.
+    photo_urls = []
+    for ref in (photo_refs or []):
+        url = uploader_photo_depuis_chatgpt(
+            ref.get("download_link"), uid, ref.get("mime_type", "image/jpeg")
+        )
+        if url:
+            photo_urls.append(url)
+
+    if photo_urls:
+        db.collection("users").document(uid).collection("meal_notes").document(date_key).set({
+            "date": date_key,
+            "photos": firestore.ArrayUnion([{
+                "url": url,
+                "uploadedAt": now.isoformat(),
+                "meal": _tag_repas(repas_type, now),
+                "source": "chatgpt",
+            } for url in photo_urls]),
+            "updatedAt": firestore.SERVER_TIMESTAMP,
+        }, merge=True)
+
+    photo_url = photo_urls[0] if photo_urls else None  # gardé pour compat (champ meals.photo_url)
 
     repas_data = {
         "date": date_key,
@@ -142,13 +153,14 @@ def enregistrer_repas(
         "heure": heure,
         "aliments": aliments,
         "calories_repas": calories,
-        "photo_enregistree": photo_url is not None,
+        "photo_enregistree": len(photo_urls) > 0,
+        "nb_photos_enregistrees": len(photo_urls),
         "total_calories_jour": total_cal,
         "nb_repas_jour": nb_repas,
         "message": (
             f"✅ Repas enregistré dans Zero Excuse — {calories} kcal. "
             f"Total du jour : {total_cal} kcal ({nb_repas} repas)."
-            + (" Photo associée." if photo_url else "")
+            + (f" {len(photo_urls)} photo(s) associée(s)." if photo_urls else "")
         ),
     }
 
