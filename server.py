@@ -284,6 +284,16 @@ async def api_sauvegarder_repas(request: Request) -> JSONResponse:
     email, err = _get_email(request, body)
     if err:
         return err
+
+    # openaiFileIdRefs : rempli automatiquement par ChatGPT avec la/les photo(s)
+    # de la conversation, si le paramètre est déclaré dans le schéma (voir
+    # /openapi.json). Chaque élément est un objet {name, id, mime_type,
+    # download_link} — le lien n'est valable que 5 minutes, d'où le
+    # téléchargement immédiat fait dans enregistrer_repas.
+    file_refs = body.get("openaiFileIdRefs") or []
+    photo_link = file_refs[0].get("download_link") if file_refs else None
+    photo_mime = file_refs[0].get("mime_type", "image/jpeg") if file_refs else "image/jpeg"
+
     result = enregistrer_repas(
         email=email,
         aliments=body.get("aliments", []),
@@ -293,6 +303,8 @@ async def api_sauvegarder_repas(request: Request) -> JSONResponse:
         lipides=body.get("lipides"),
         repas_type=body.get("repas_type", "repas"),
         notes=body.get("notes", ""),
+        photo_download_link=photo_link,
+        photo_mime_type=photo_mime,
     )
     return JSONResponse(result)
 
@@ -430,6 +442,11 @@ async def openapi_schema(request: Request) -> JSONResponse:
                                         "lipides": {"type": "number", "nullable": True},
                                         "repas_type": {"type": "string", "default": "repas"},
                                         "notes": {"type": "string", "default": ""},
+                                        "openaiFileIdRefs": {
+                                            "type": "array",
+                                            "items": {"type": "string"},
+                                            "description": "La photo du repas envoyée par l'utilisateur dans cette conversation (une seule suffit, la première sera utilisée).",
+                                        },
                                     },
                                 }
                             }
