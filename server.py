@@ -3,7 +3,7 @@ from fastmcp import FastMCP
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 from tools.firebase_utils import verifier_plan
-from tools.repas import enregistrer_repas, historique_repas, bilan_calorique_jour
+from tools.repas import enregistrer_repas, historique_repas, bilan_calorique_jour, modifier_repas, supprimer_repas
 from tools.poids import poids_du_jour, historique_poids
 from tools.metabolisme import calculer_metabolisme
 from tools.analyse import analyser_progression
@@ -73,6 +73,62 @@ def sauvegarder_repas(
         repas_type=repas_type,
         notes=notes,
     )
+
+
+# ── OUTIL 2bis : CORRIGER REPAS ───────────────────────────────────
+@mcp.tool(annotations=WRITE_TOOL)
+def corriger_repas(
+    email: str,
+    repas_id: str,
+    aliments: list[str] | None = None,
+    calories: int | None = None,
+    proteines: float | None = None,
+    glucides: float | None = None,
+    lipides: float | None = None,
+    repas_type: str | None = None,
+    notes: str | None = None,
+) -> dict:
+    """
+    Corrige un repas déjà enregistré dans Zero Excuse (par exemple si les
+    aliments identifiés initialement étaient faux). Ne modifie que les
+    champs fournis ; les autres restent inchangés.
+
+    Le repas_id est celui retourné par sauvegarder_repas au moment de
+    l'enregistrement initial — demande-le à l'utilisateur ou récupère-le
+    via voir_historique_repas si besoin.
+
+    Exemples de déclenchement :
+    - "En fait c'était des galettes de lentilles, pas des muffins, corrige"
+    - "Remplace mon dernier repas par..."
+    """
+    return modifier_repas(
+        email=email,
+        repas_id=repas_id,
+        aliments=aliments,
+        calories=calories,
+        proteines=proteines,
+        glucides=glucides,
+        lipides=lipides,
+        repas_type=repas_type,
+        notes=notes,
+    )
+
+
+# ── OUTIL 2ter : SUPPRIMER REPAS ──────────────────────────────────
+@mcp.tool(annotations=WRITE_TOOL)
+def effacer_repas(email: str, repas_id: str) -> dict:
+    """
+    Supprime un repas enregistré par erreur dans Zero Excuse (mauvaise
+    photo, doublon, etc.).
+
+    Le repas_id est celui retourné par sauvegarder_repas au moment de
+    l'enregistrement initial.
+
+    Exemples de déclenchement :
+    - "Supprime ce repas, c'était une erreur"
+    - "Annule le dernier enregistrement"
+    """
+    return supprimer_repas(email=email, repas_id=repas_id)
 
 
 # ── OUTIL 3 : HISTORIQUE REPAS ───────────────────────────────────
@@ -241,6 +297,42 @@ async def api_sauvegarder_repas(request: Request) -> JSONResponse:
     return JSONResponse(result)
 
 
+@mcp.custom_route("/api/repas/corriger", methods=["POST"])
+async def api_corriger_repas(request: Request) -> JSONResponse:
+    body = await request.json()
+    email, err = _get_email(request, body)
+    if err:
+        return err
+    repas_id = body.get("repas_id")
+    if not repas_id:
+        return JSONResponse({"succes": False, "message": "Paramètre 'repas_id' manquant."}, status_code=400)
+    result = modifier_repas(
+        email=email,
+        repas_id=repas_id,
+        aliments=body.get("aliments"),
+        calories=body.get("calories"),
+        proteines=body.get("proteines"),
+        glucides=body.get("glucides"),
+        lipides=body.get("lipides"),
+        repas_type=body.get("repas_type"),
+        notes=body.get("notes"),
+    )
+    return JSONResponse(result)
+
+
+@mcp.custom_route("/api/repas/supprimer", methods=["POST"])
+async def api_supprimer_repas(request: Request) -> JSONResponse:
+    body = await request.json()
+    email, err = _get_email(request, body)
+    if err:
+        return err
+    repas_id = body.get("repas_id")
+    if not repas_id:
+        return JSONResponse({"succes": False, "message": "Paramètre 'repas_id' manquant."}, status_code=400)
+    result = supprimer_repas(email=email, repas_id=repas_id)
+    return JSONResponse(result)
+
+
 @mcp.custom_route("/api/historique-repas", methods=["GET"])
 async def api_historique_repas(request: Request) -> JSONResponse:
     email, err = _get_email(request)
@@ -338,6 +430,57 @@ async def openapi_schema(request: Request) -> JSONResponse:
                                         "lipides": {"type": "number", "nullable": True},
                                         "repas_type": {"type": "string", "default": "repas"},
                                         "notes": {"type": "string", "default": ""},
+                                    },
+                                }
+                            }
+                        },
+                    },
+                    "responses": {"200": {"description": "OK"}},
+                }
+            },
+            "/api/repas/corriger": {
+                "post": {
+                    "operationId": "corrigerRepas",
+                    "summary": "Corrige un repas déjà enregistré (repas_id renvoyé par sauvegarderRepas). Seuls les champs fournis sont modifiés.",
+                    "requestBody": {
+                        "required": True,
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "required": ["email", "repas_id"],
+                                    "properties": {
+                                        "email": {"type": "string", "description": "Email Zero Excuse de l'utilisateur."},
+                                        "repas_id": {"type": "string", "description": "Identifiant du repas à corriger, renvoyé par sauvegarderRepas."},
+                                        "aliments": {"type": "array", "items": {"type": "string"}},
+                                        "calories": {"type": "integer"},
+                                        "proteines": {"type": "number", "nullable": True},
+                                        "glucides": {"type": "number", "nullable": True},
+                                        "lipides": {"type": "number", "nullable": True},
+                                        "repas_type": {"type": "string"},
+                                        "notes": {"type": "string"},
+                                    },
+                                }
+                            }
+                        },
+                    },
+                    "responses": {"200": {"description": "OK"}},
+                }
+            },
+            "/api/repas/supprimer": {
+                "post": {
+                    "operationId": "supprimerRepas",
+                    "summary": "Supprime un repas enregistré par erreur (repas_id renvoyé par sauvegarderRepas).",
+                    "requestBody": {
+                        "required": True,
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "required": ["email", "repas_id"],
+                                    "properties": {
+                                        "email": {"type": "string", "description": "Email Zero Excuse de l'utilisateur."},
+                                        "repas_id": {"type": "string", "description": "Identifiant du repas à supprimer, renvoyé par sauvegarderRepas."},
                                     },
                                 }
                             }

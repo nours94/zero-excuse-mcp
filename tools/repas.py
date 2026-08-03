@@ -287,3 +287,132 @@ def bilan_calorique_jour(email: str) -> dict:
         "statut": statut,
         "message": message,
     }
+
+
+def _recalculer_total_jour(db, uid: str, date_key: str) -> tuple[int, int]:
+    """
+    Recalcule le total calorique et le nombre de repas du jour à partir
+    des repas réellement présents (plus fiable qu'un compteur incrémental
+    qui peut se désynchroniser après une modification ou suppression).
+    """
+    repas_docs = (
+        db.collection("users")
+        .document(uid)
+        .collection("meals")
+        .where("date", "==", date_key)
+        .get()
+    )
+    total_cal = 0
+    nb_repas = 0
+    for doc in repas_docs:
+        total_cal += doc.to_dict().get("calories", 0) or 0
+        nb_repas += 1
+
+    daily_ref = db.collection("users").document(uid).collection("daily_calories").document(date_key)
+    daily_ref.set({
+        "date": date_key,
+        "total_calories": total_cal,
+        "nb_repas": nb_repas,
+        "updatedAt": firestore.SERVER_TIMESTAMP,
+    }, merge=True)
+
+    return total_cal, nb_repas
+
+
+def modifier_repas(
+    email: str,
+    repas_id: str,
+    aliments: list[str] | None = None,
+    calories: int | None = None,
+    proteines: float | None = None,
+    glucides: float | None = None,
+    lipides: float | None = None,
+    repas_type: str | None = None,
+    notes: str | None = None,
+) -> dict:
+    """
+    Corrige un repas déjà enregistré (par exemple si ChatGPT s'est trompé
+    dans l'identification des aliments). Seuls les champs fournis sont mis
+    à jour ; les autres restent inchangés. Le total calorique du jour est
+    automatiquement recalculé.
+    """
+    user = trouver_utilisateur_par_email(email)
+    if not user:
+        return {"succes": False, "message": "Aucun compte Zero Excuse trouvé avec cet email."}
+
+    uid = user["uid"]
+    db = get_db()
+    ref = db.collection("users").document(uid).collection("meals").document(repas_id)
+    doc = ref.get()
+
+    if not doc.exists:
+        return {
+            "succes": False,
+            "message": f"Aucun repas trouvé avec l'identifiant {repas_id} pour ce compte.",
+        }
+
+    updates = {}
+    if aliments is not None:
+        updates["aliments"] = aliments
+    if calories is not None:
+        updates["calories"] = calories
+    if proteines is not None:
+        updates["proteines_g"] = proteines
+    if glucides is not None:
+        updates["glucides_g"] = glucides
+    if lipides is not None:
+        updates["lipides_g"] = lipides
+    if repas_type is not None:
+        updates["repas_type"] = repas_type
+    if notes is not None:
+        updates["notes"] = notes
+
+    if not updates:
+        return {"succes": False, "message": "Aucune modification fournie."}
+
+    ref.update(updates)
+
+    date_key = doc.to_dict().get("date")
+    total_cal, nb_repas = _recalculer_total_jour(db, uid, date_key)
+
+    return {
+        "succes": True,
+        "repas_id": repas_id,
+        "champs_modifies": list(updates.keys()),
+        "total_calories_jour": total_cal,
+        "nb_repas_jour": nb_repas,
+        "message": f"✅ Repas corrigé. Total du jour recalculé : {total_cal} kcal ({nb_repas} repas).",
+    }
+
+
+def supprimer_repas(email: str, repas_id: str) -> dict:
+    """
+    Supprime un repas enregistré par erreur (ex. mauvaise photo, doublon).
+    Le total calorique du jour est automatiquement recalculé.
+    """
+    user = trouver_utilisateur_par_email(email)
+    if not user:
+        return {"succes": False, "message": "Aucun compte Zero Excuse trouvé avec cet email."}
+
+    uid = user["uid"]
+    db = get_db()
+    ref = db.collection("users").document(uid).collection("meals").document(repas_id)
+    doc = ref.get()
+
+    if not doc.exists:
+        return {
+            "succes": False,
+            "message": f"Aucun repas trouvé avec l'identifiant {repas_id} pour ce compte.",
+        }
+
+    date_key = doc.to_dict().get("date")
+    ref.delete()
+    total_cal, nb_repas = _recalculer_total_jour(db, uid, date_key)
+
+    return {
+        "succes": True,
+        "repas_id": repas_id,
+        "total_calories_jour": total_cal,
+        "nb_repas_jour": nb_repas,
+        "message": f"🗑️ Repas supprimé. Total du jour recalculé : {total_cal} kcal ({nb_repas} repas).",
+    }
