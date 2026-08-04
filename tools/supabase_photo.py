@@ -10,6 +10,7 @@ supplémentaire à installer.
 
 import os
 import urllib.request
+import urllib.error
 
 SUPABASE_URL = "https://qickfdlhgjdrtzxmtvga.supabase.co"
 SUPABASE_ANON_KEY = "sb_publishable_tgtX28p35SHQMd-ijXZMZQ_88e8ZXQF"
@@ -23,10 +24,20 @@ def uploader_photo_depuis_chatgpt(download_link: str, uid: str, mime_type: str =
     Retourne l'URL publique permanente, ou None en cas d'échec
     (une photo ratée ne doit pas empêcher l'enregistrement du repas).
     """
+    print(f"[supabase_photo] Téléchargement depuis : {download_link[:80]}...")
     try:
-        with urllib.request.urlopen(download_link, timeout=8) as resp:
+        req = urllib.request.Request(
+            download_link,
+            headers={"User-Agent": "Mozilla/5.0 (compatible; ZeroExcuseBot/1.0)"},
+        )
+        with urllib.request.urlopen(req, timeout=8) as resp:
             image_bytes = resp.read()
-    except Exception:
+        print(f"[supabase_photo] Téléchargement OK, {len(image_bytes)} octets, statut {resp.status}")
+    except urllib.error.HTTPError as e:
+        print(f"[supabase_photo] ÉCHEC téléchargement — HTTPError {e.code}: {e.read()[:300]}")
+        return None
+    except Exception as e:
+        print(f"[supabase_photo] ÉCHEC téléchargement — {type(e).__name__}: {e}")
         return None
 
     ext = "png" if "png" in mime_type else "jpg"
@@ -45,9 +56,14 @@ def uploader_photo_depuis_chatgpt(download_link: str, uid: str, mime_type: str =
     )
     try:
         with urllib.request.urlopen(req, timeout=8) as resp:
-            if resp.status not in (200, 201):
-                return None
-    except Exception:
+            print(f"[supabase_photo] Upload Supabase OK, statut {resp.status}")
+    except urllib.error.HTTPError as e:
+        print(f"[supabase_photo] ÉCHEC upload Supabase — HTTPError {e.code}: {e.read()[:300]}")
+        return None
+    except Exception as e:
+        print(f"[supabase_photo] ÉCHEC upload Supabase — {type(e).__name__}: {e}")
         return None
 
-    return f"{SUPABASE_URL}/storage/v1/object/public/{BUCKET}/{path}"
+    url = f"{SUPABASE_URL}/storage/v1/object/public/{BUCKET}/{path}"
+    print(f"[supabase_photo] Succès complet : {url}")
+    return url
